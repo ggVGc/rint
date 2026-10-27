@@ -343,9 +343,10 @@ dependencies = [
 name = "rint-ratatui-example"
 version = "0.1.0"
 dependencies = [
+ "crossterm",
+ "ratatui",
  "rint",
  "rint-build",
- "terminal-ui",
 ]
 
 [[package]]
@@ -512,14 +513,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
-]
-
-[[package]]
-name = "terminal-ui"
-version = "0.1.0"
-dependencies = [
- "crossterm",
- "ratatui",
 ]
 
 [[package]]

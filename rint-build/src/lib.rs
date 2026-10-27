@@ -4,13 +4,60 @@ use std::{path::Path, process::Command};
 /// Parse a script and generate registrations for external functions it uses.
 /// Call from build.rs; reports the script as a Cargo rebuild input.
 pub fn generate(path: impl AsRef<Path>) -> Result<Bindings, String> {
+    generate_with_native_modules(path, &[])
+}
+
+/// Generate bindings with explicitly compiled, top-level application modules.
+/// Each module must have a `mod name;` declaration in the application and expose
+/// functions supported by rint's native boundary. The generated file includes
+/// these modules in the runner as well as registering their referenced functions.
+pub fn generate_with_native_modules(
+    path: impl AsRef<Path>,
+    native_modules: &[&str],
+) -> Result<Bindings, String> {
     let path = path.as_ref();
-    println!("cargo:rerun-if-changed={}", path.display());
     let source = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let declarations = rint::parser::parse_program(rint::lexer::tokenize(&source)?)?;
+    for name in native_modules {
+        if !declarations
+            .iter()
+            .any(|item| matches!(item, rint::ast::Item::FileMod(module) if module == name))
+        {
+            return Err(format!(
+                "native module `{name}` must have a top-level `mod {name};` declaration"
+            ));
+        }
+    }
+    let native_names: Vec<String> = native_modules.iter().map(|name| name.to_string()).collect();
+    let parsed = rint::modules::parse(&source, path, &native_names)?;
+    for file in &parsed.files {
+        println!("cargo:rerun-if-changed={}", file.display());
+    }
     let dependencies = external_dependencies()?;
-    let source = rint::bindings::generate_for_dependencies(&source, &dependencies)
-        .map_err(|e| format!("{}:{e}", path.display()))?;
-    Ok(Bindings { source })
+    let mut prelude = String::new();
+    for name in native_modules {
+        if name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+            return Err(format!("invalid native module name `{name}`"));
+        }
+        let file =
+            rint::modules::module_file(path.parent().unwrap_or_else(|| Path::new(".")), name)?;
+        println!("cargo:rerun-if-changed={}", file.display());
+        let file = file
+            .canonicalize()
+            .map_err(|e| format!("{}: {e}", file.display()))?;
+        prelude.push_str(&format!(
+            "#[path = {:?}]\nmod {name};\n",
+            file.to_string_lossy()
+        ));
+    }
+    let generated = rint::bindings::generate_items_with_native_modules(
+        parsed.items,
+        &dependencies,
+        &native_names,
+    )
+    .map_err(|e| format!("{}:{e}", path.display()))?;
+    prelude.push_str(&generated);
+    Ok(Bindings { source: prelude })
 }
 
 /// Read dependency names from Cargo rather than treating arbitrary qualified

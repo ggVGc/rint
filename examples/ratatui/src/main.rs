@@ -1,3 +1,6 @@
+mod counter;
+mod terminal_ui;
+
 use terminal_ui::{draw, read_key, start, stop};
 
 fn main() -> Result<(), String> {
@@ -8,16 +11,16 @@ fn main() -> Result<(), String> {
 }
 
 fn run() -> Result<(), String> {
-    let mut count = 0;
+    let mut counter = counter::Counter::new();
     loop {
-        draw(count)?;
+        draw(counter.value())?;
         let key = read_key()?;
         if key == "q" {
             break;
         } else if key == "+" {
-            count += 1;
+            counter.increment();
         } else if key == "-" {
-            count -= 5;
+            counter.decrement();
         }
     }
     Ok(())

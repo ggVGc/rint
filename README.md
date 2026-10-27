@@ -73,8 +73,27 @@ dependencies use the host's Cargo names, versions and enabled features. They do
 not need to be build dependencies. `rint-build` checks discovered paths against
 the host's external dependencies from Cargo metadata, including dependency
 aliases. It rejects native bindings to the application's own library or unknown
-modules. Application modules belong on the interpreted side; file-module imports
-will be supported by the interpreter in the future.
+modules. Application file modules (`mod name;`) are loaded and interpreted,
+including nested modules in `name.rs` or `name/mod.rs`. Module names and imports
+are resolved within their module, with `crate`, `self`, and `super` paths.
+`rint-build` discovers dependency calls across these files and tracks each source
+file as a Cargo rebuild input.
+
+For an adapter that needs compiled Rust APIs, explicitly opt a top-level file
+module into compilation in `build.rs`:
+
+```rust
+rint_build::generate_with_native_modules("src/main.rs", &["terminal_ui"])
+    .expect("discover bindings")
+    .write_to_out_dir("rint_bindings.rs")
+    .expect("write bindings");
+```
+
+The application declares `mod terminal_ui;` normally. Generated bindings include
+that module in the runner and register its referenced functions. These functions
+use the same supported native boundary as dependency functions. The module is
+compiled when building the runner; edits to it require rebuilding. Other
+application modules are read fresh and interpreted on each invocation.
 
 Cargo reruns generation when the script changes. Scripts can change at runtime
 within the set of compiled bindings; new functions or generic specializations
@@ -136,11 +155,17 @@ adapter, and async functions are not supported by automatic generation.
 References rooted in declared external dependencies are emitted as function
 bindings; Rust compilation reports nonexistent functions or unsupported
 signatures. Other unresolved roots are rejected by binding generation.
-The existing interpreter's module/import resolution limitations also apply.
+Modules remain subject to the supported Rust subset: visibility and types are
+not checked, and attributes such as `#[path]` and conditional compilation are
+not evaluated.
 
 ## Host control
 
 `Engine::compile` returns a resolved program containing its compiled bindings.
+Use `Engine::compile_with_path(source, filename)` to load file modules relative
+to a source file. `run_file`, `run_cli`, and `run_with_io` also load file modules.
+For manual bindings, `register_native_module("adapter")` declares that a file
+module is provided by the host; register its functions separately.
 `run_with_io` accepts a filename, arguments, output writer and optional input
 reader. Execution uses the caller's thread, so callbacks can capture application
 state with `Rc<RefCell<_>>`. For deep recursion, create and use the engine on a

@@ -300,7 +300,7 @@ impl Parser {
                 self.advance();
                 let name = self.ident()?;
                 if self.eat(";") {
-                    return Err(format!("{}: file modules (`mod {};`) are not supported", self.line(), name));
+                    return Ok(Some(Item::FileMod(name)));
                 }
                 self.expect("{")?;
                 let mut items = Vec::new();

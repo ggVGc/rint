@@ -350,6 +350,7 @@ pub enum Item {
     /// `use a::b::c as d;` → (alias, full path)
     Use(Vec<(String, Vec<String>)>),
     Mod(String, Vec<Item>),
+    FileMod(String),
     TypeAlias(String, Type),
 }
 

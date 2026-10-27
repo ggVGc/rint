@@ -12,6 +12,7 @@ use std::{
 #[derive(Default)]
 pub struct Engine {
     bindings: Vec<NativeBinding>,
+    native_modules: Vec<String>,
 }
 
 impl Engine {
@@ -44,8 +45,21 @@ impl Engine {
         Ok(())
     }
 
+    /// Declare a file module implemented by the compiled host. Its functions
+    /// must also be registered with `register_fn` or `register_raw`.
+    pub fn register_native_module(&mut self, path: &str) {
+        if !self.native_modules.iter().any(|module| module == path) {
+            self.native_modules.push(path.into());
+        }
+    }
+
     pub fn compile(&self, src: &str) -> Result<Program, String> {
-        let items = crate::parser::parse_program(crate::lexer::tokenize(src)?)?;
+        self.compile_with_path(src, "<script>")
+    }
+
+    /// Compile source, loading interpreted modules relative to `file`.
+    pub fn compile_with_path(&self, src: &str, file: impl AsRef<Path>) -> Result<Program, String> {
+        let items = crate::modules::parse(src, file.as_ref(), &self.native_modules)?.items;
         let paths = self.bindings.iter().map(|b| b.path.clone()).collect();
         let (mut program, _) = crate::resolve::resolve_with_native(items, paths, false)?;
         program.native_fns = self.bindings.clone();
@@ -61,7 +75,9 @@ impl Engine {
         out: Box<dyn Write>,
         stdin: Option<Box<dyn BufRead>>,
     ) -> Result<i32, String> {
-        let program = self.compile(src).map_err(|e| format!("{file}:{e}"))?;
+        let program = self
+            .compile_with_path(src, file)
+            .map_err(|e| format!("{file}:{e}"))?;
         let mut interp = crate::interp::Interp::new(program, out, file, args);
         interp.stdin = stdin;
         interp.run_main()

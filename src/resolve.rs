@@ -50,8 +50,12 @@ pub struct Resolver {
     ctxs: Vec<FnCtx>,
     globals: HashMap<String, Global>,
     aliases: HashMap<String, Vec<String>>,
-    glob_enums: Vec<u32>,
+    glob_enums: Vec<(String, u32)>,
+    glob_modules: HashMap<String, Vec<Vec<String>>>,
     modules: HashSet<String>,
+    module: Vec<String>,
+    fn_modules: HashMap<u32, Vec<String>>,
+    const_modules: HashMap<u32, Vec<String>>,
     traits: HashMap<String, Vec<(Sym, u32)>>,
     trait_names: HashSet<String>,
     pending_fns: Vec<(u32, FnDecl, Option<String>)>,
@@ -97,7 +101,11 @@ pub fn resolve_with_native(items: Vec<Item>, native_paths: Vec<String>, discover
         globals: HashMap::new(),
         aliases: HashMap::new(),
         glob_enums: Vec::new(),
+        glob_modules: HashMap::new(),
         modules: HashSet::new(),
+        module: vec![],
+        fn_modules: HashMap::new(),
+        const_modules: HashMap::new(),
         traits: HashMap::new(),
         trait_names: HashSet::new(),
         pending_fns: Vec::new(),
@@ -132,6 +140,116 @@ fn dummy_fn() -> Rc<FnDecl> {
 }
 
 impl Resolver {
+    fn qualified(&self, name: &str) -> String {
+        if self.module.is_empty() {
+            name.into()
+        } else {
+            format!("{}::{name}", self.module.join("::"))
+        }
+    }
+
+    fn global(&self, name: &str) -> Option<&Global> {
+        self.globals
+            .get(&self.qualified(name))
+            .or_else(|| {
+                self.glob_modules
+                    .get(&self.module.join("::"))
+                    .and_then(|modules| {
+                        modules.iter().find_map(|module| {
+                            self.globals.get(&format!("{}::{name}", module.join("::")))
+                        })
+                    })
+            })
+            .or_else(|| self.globals.get(name))
+    }
+
+    fn alias(&self, name: &str) -> Option<&Vec<String>> {
+        self.aliases
+            .get(&self.qualified(name))
+            .or_else(|| self.aliases.get(name))
+    }
+
+    fn visible_glob_enums(&self) -> impl Iterator<Item = &u32> {
+        let scope = self.module.join("::");
+        self.glob_enums
+            .iter()
+            .filter(move |(module, _)| module == &scope)
+            .map(|(_, id)| id)
+    }
+
+    fn expand_module_path(&self, path: &[String]) -> Vec<String> {
+        self.expand_module_path_in(path, &self.module, &mut HashSet::new())
+    }
+
+    fn expand_module_path_in(
+        &self,
+        path: &[String],
+        module: &[String],
+        seen: &mut HashSet<String>,
+    ) -> Vec<String> {
+        let Some(first) = path.first() else {
+            return vec![];
+        };
+        let local = module
+            .iter()
+            .chain(std::iter::once(first))
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("::");
+        let alias_key = if self.aliases.contains_key(&local) {
+            &local
+        } else {
+            first
+        };
+        if let Some(alias) = self.aliases.get(alias_key) {
+            if seen.insert(alias_key.clone()) {
+                let owner: Vec<String> = alias_key.split("::").map(String::from).collect();
+                let mut expanded =
+                    self.expand_module_path_in(alias, &owner[..owner.len() - 1], seen);
+                expanded.extend_from_slice(&path[1..]);
+                return self.expand_qualified_aliases(expanded, seen);
+            }
+        }
+        let mut path = path.to_vec();
+        let mut base = Vec::new();
+        if first == "crate" {
+            path.remove(0);
+        } else if first == "self" || first == "super" {
+            base = module.to_vec();
+            while path.first().is_some_and(|p| p == "self" || p == "super") {
+                if path.remove(0) == "super" {
+                    base.pop();
+                }
+            }
+        } else if !module.is_empty() {
+            let candidate = format!("{}::{}", module.join("::"), path.join("::"));
+            let root = format!("{}::{first}", module.join("::"));
+            if self.globals.contains_key(&candidate) || self.modules.contains(&root) {
+                base = module.to_vec();
+            }
+        }
+        base.extend(path);
+        self.expand_qualified_aliases(base, seen)
+    }
+
+    fn expand_qualified_aliases(
+        &self,
+        path: Vec<String>,
+        seen: &mut HashSet<String>,
+    ) -> Vec<String> {
+        for end in 1..=path.len() {
+            let key = path[..end].join("::");
+            if let Some(alias) = self.aliases.get(&key) {
+                if seen.insert(key) {
+                    let mut expanded = self.expand_module_path_in(alias, &path[..end - 1], seen);
+                    expanded.extend_from_slice(&path[end..]);
+                    return self.expand_qualified_aliases(expanded, seen);
+                }
+            }
+        }
+        path
+    }
+
     fn add_builtin_types(&mut self) {
         let mk_enum = |r: &mut Resolver, name: &str, vars: &[(&str, StructKind, i64)]| {
             let eid = r.prog.enums.len() as u32;
@@ -190,7 +308,7 @@ impl Resolver {
                         copy: s.derives.iter().any(|d| d == "Copy"),
                         derives: s.derives.clone(),
                     });
-                    self.globals.insert(s.name.clone(), Global::Struct(id));
+                    self.globals.insert(self.qualified(&s.name), Global::Struct(id));
                 }
                 Item::Enum(e) => {
                     let eid = self.prog.enums.len() as u32;
@@ -220,18 +338,21 @@ impl Resolver {
                         copy: e.derives.iter().any(|d| d == "Copy"),
                         derives: e.derives.clone(),
                     });
-                    self.globals.insert(e.name.clone(), Global::Enum(eid));
+                    self.globals.insert(self.qualified(&e.name), Global::Enum(eid));
                 }
+                Item::FileMod(name) => return Err(format!("file module `{name}` requires a source filename; use Engine::compile_with_path or run_file")),
                 Item::Mod(name, sub) => {
-                    self.modules.insert(name.clone());
+                    self.modules.insert(self.qualified(name));
+                    self.module.push(name.clone());
                     self.collect_types(sub)?;
+                    self.module.pop();
                 }
                 Item::Trait(t) => {
-                    self.trait_names.insert(t.name.clone());
+                    self.trait_names.insert(self.qualified(&t.name));
                 }
                 Item::TypeAlias(name, ty) => {
                     if name != &ty.name {
-                        self.aliases.insert(name.clone(), vec![ty.name.clone()]);
+                        self.aliases.insert(self.qualified(name), vec![ty.name.clone()]);
                     }
                 }
                 _ => {}
@@ -242,7 +363,7 @@ impl Resolver {
 
     fn type_key(&self, ty: &Type) -> u32 {
         let b = ty.base();
-        match self.globals.get(&b.name) {
+        match self.global(&b.name) {
             Some(Global::Struct(id)) => *id,
             Some(Global::Enum(id)) => TK_ENUM + id,
             _ => {
@@ -261,6 +382,7 @@ impl Resolver {
         let id = self.prog.fns.len() as u32;
         self.prog.fns.push(dummy_fn());
         self.param_types.insert(id, f.params.iter().map(|p| p.ty.clone()).collect());
+        self.fn_modules.insert(id, self.module.clone());
         self.pending_fns.push((id, f, self_ty));
         id
     }
@@ -274,8 +396,9 @@ impl Resolver {
             }
             self.const_inits.insert(id, init);
         }
+        self.const_modules.insert(id, self.module.clone());
         self.pending_consts.push((id, self_ty));
-        self.globals.insert(global_name, if c.is_static { Global::Static(id) } else { Global::Const(id) });
+        self.globals.insert(self.qualified(&global_name), if c.is_static { Global::Static(id) } else { Global::Const(id) });
         id
     }
 
@@ -304,9 +427,13 @@ impl Resolver {
                             self.add_const(c, n, None);
                         }
                     }
-                    self.traits.insert(t.name.clone(), defaults);
+                    self.traits.insert(self.qualified(&t.name), defaults);
                 }
-                Item::Mod(_, sub) => self.register_rest_mod(sub, &mut rest)?,
+                Item::Mod(name, sub) => {
+                    self.module.push(name);
+                    self.register_rest(sub)?;
+                    self.module.pop();
+                }
                 other => rest.push(other),
             }
         }
@@ -316,7 +443,7 @@ impl Resolver {
                 Item::Fn(f) => {
                     let name = f.name.clone();
                     let id = self.add_fn(f, None);
-                    self.globals.insert(name, Global::Fn(id));
+                    self.globals.insert(self.qualified(&name), Global::Fn(id));
                 }
                 Item::Const(c) => {
                     let n = c.name.clone();
@@ -325,11 +452,16 @@ impl Resolver {
                 Item::Use(list) => {
                     for (alias, path) in list {
                         if alias == "*" {
+                            let prefix = self.expand_module_path(&path[..path.len() - 1]);
+                            if self.modules.contains(&prefix.join("::")) {
+                                self.glob_modules.entry(self.module.join("::")).or_default().push(prefix);
+                                continue;
+                            }
                             // `use Enum::*`
                             let p: Vec<&String> = path.iter().filter(|s| !STD_MODULES.contains(&s.as_str())).collect();
                             if p.len() >= 2 {
-                                if let Some(Global::Enum(e)) = self.globals.get(p[p.len() - 2].as_str()) {
-                                    self.glob_enums.push(*e);
+                                if let Some(Global::Enum(e)) = self.global(p[p.len() - 2].as_str()) {
+                                    self.glob_enums.push((self.module.join("::"), *e));
                                 }
                             }
                             continue;
@@ -337,7 +469,7 @@ impl Resolver {
                         if path.len() == 1 && path[0] == alias {
                             continue;
                         }
-                        self.aliases.insert(alias, path);
+                        self.aliases.insert(self.qualified(&alias), path);
                     }
                 }
                 Item::Impl(i) => impls.push(i),
@@ -346,17 +478,6 @@ impl Resolver {
         }
         for imp in impls {
             self.register_impl(imp)?;
-        }
-        Ok(())
-    }
-
-    fn register_rest_mod(&mut self, items: Vec<Item>, rest: &mut Vec<Item>) -> RResult<()> {
-        for it in items {
-            match it {
-                Item::Trait(t) => self.register_rest(vec![Item::Trait(t)])?,
-                Item::Mod(_, sub) => self.register_rest_mod(sub, rest)?,
-                other => rest.push(other),
-            }
         }
         Ok(())
     }
@@ -404,7 +525,7 @@ impl Resolver {
                     self.prog.enums[(tk - TK_ENUM) as usize].copy = true;
                 }
             }
-            if let Some(defs) = self.traits.get(tr).cloned() {
+            if let Some(defs) = self.traits.get(&self.qualified(tr)).or_else(|| self.traits.get(tr)).cloned() {
                 for (sym, id) in defs {
                     if !defined.contains(&sym) {
                         self.prog.methods.entry((tk, sym)).or_insert(id);
@@ -420,7 +541,9 @@ impl Resolver {
             let fns = std::mem::take(&mut self.pending_fns);
             for (id, mut f, self_ty) in fns {
                 let saved = std::mem::replace(&mut self.impl_self, self_ty);
+                let saved_module = std::mem::replace(&mut self.module, self.fn_modules[&id].clone());
                 self.resolve_fn(&mut f)?;
+                self.module = saved_module;
                 self.impl_self = saved;
                 self.prog.fns[id as usize] = Rc::new(f);
             }
@@ -430,7 +553,9 @@ impl Resolver {
                     let saved = std::mem::replace(&mut self.impl_self, self_ty);
                     let saved_ctxs = std::mem::take(&mut self.ctxs);
                     self.ctxs.push(FnCtx { scopes: vec![HashMap::new()], nslots: 0, is_closure: false, caps: vec![] });
+                    let saved_module = std::mem::replace(&mut self.module, self.const_modules[&id].clone());
                     self.resolve_expr(&mut init)?;
+                    self.module = saved_module;
                     let ctx = self.ctxs.pop().unwrap();
                     self.ctxs = saved_ctxs;
                     self.impl_self = saved;
@@ -535,12 +660,12 @@ impl Resolver {
         if self.ctxs.iter().any(|c| c.scopes.iter().any(|s| s.contains_key(name))) {
             return false;
         }
-        match self.globals.get(name) {
+        match self.global(name) {
             Some(Global::Variant(v)) => self.prog.variants[*v as usize].kind == StructKind::Unit,
             Some(Global::Struct(s)) => self.prog.structs[*s as usize].kind == StructKind::Unit,
             Some(Global::Const(_)) | Some(Global::Static(_)) => true,
             _ => {
-                for e in &self.glob_enums {
+                for e in self.visible_glob_enums() {
                     for v in &self.prog.enums[*e as usize].variants {
                         let vd = &self.prog.variants[*v as usize];
                         if vd.name == name && vd.kind == StructKind::Unit {
@@ -548,9 +673,9 @@ impl Resolver {
                         }
                     }
                 }
-                if let Some(p) = self.aliases.get(name) {
+                if let Some(p) = self.alias(name) {
                     if p.len() >= 2 {
-                        if let Some(Global::Enum(e)) = self.globals.get(p[p.len() - 2].as_str()) {
+                        if let Some(Global::Enum(e)) = self.global(p[p.len() - 2].as_str()) {
                             return self.prog.enums[*e as usize]
                                 .variants
                                 .iter()
@@ -566,12 +691,7 @@ impl Resolver {
     // ---------------------------------------------------------------- paths
     fn resolve_value_path(&mut self, p: &PathExpr) -> RResult<Res> {
         if !p.generics.is_empty() {
-            let mut segs = p.segs.clone();
-            if let Some(prefix) = self.aliases.get(&segs[0]) {
-                let mut expanded = prefix.clone();
-                expanded.extend(segs[1..].iter().cloned());
-                segs = expanded;
-            }
+            let mut segs = self.expand_module_path(&p.segs);
             if segs.len() > 1 && self.is_external_root(&segs[0]) {
                 let types = p.generics.iter().map(crate::bindings::rust_type).collect::<Result<Vec<_>, _>>()?;
                 let last = segs.last_mut().unwrap();
@@ -583,11 +703,13 @@ impl Resolver {
     }
 
     fn is_external_root(&self, root: &str) -> bool {
-        !STD_MODULES.contains(&root)
+        root != "Self"
+            && !STD_MODULES.contains(&root)
             && !PRIM_TYPES.contains(&root)
             && !self.modules.contains(root)
             && !self.globals.contains_key(root)
             && !STD_TRAITS.contains(&root)
+            && !self.trait_names.contains(&self.qualified(root))
             && !self.trait_names.contains(root)
     }
 
@@ -599,13 +721,18 @@ impl Resolver {
             }
             return self.resolve_global(name);
         }
-        // expand a leading alias
-        let mut segs: Vec<String> = segs.to_vec();
-        if let Some(p) = self.aliases.get(&segs[0]) {
-            let mut v = p.clone();
-            v.extend(segs[1..].iter().cloned());
-            segs = v;
+        let canonical = self.expand_module_path(segs);
+        if let Some(global) = self.globals.get(&canonical.join("::")) {
+            return Ok(global_res(*global));
         }
+        // Keep associated items of module-local types qualified.
+        if canonical.len() > 1 {
+            let type_name = canonical[..canonical.len() - 1].join("::");
+            if self.globals.contains_key(&type_name) {
+                return self.resolve_associated_path(type_name, canonical.last().unwrap().clone());
+            }
+        }
+        let mut segs = canonical.clone();
         if let Some(id) = self.native_paths.iter().position(|p| p == &segs.join("::")) {
             return Ok(Res::Native(id as u32));
         }
@@ -617,7 +744,10 @@ impl Resolver {
             }
             return Err(format!("unresolved path `{}` (no native binding registered)", segs.join("::")));
         }
-        let is_module = |r: &Resolver, s: &str| STD_MODULES.contains(&s) || r.modules.contains(s);
+        if self.modules.contains(&canonical[0]) {
+            return Err(format!("unresolved module path `{}`", canonical.join("::")));
+        }
+        let is_module = |_r: &Resolver, s: &str| STD_MODULES.contains(&s);
         while segs.len() > 2 && is_module(self, &segs[0]) {
             segs.remove(0);
         }
@@ -642,10 +772,14 @@ impl Resolver {
         if ty == "Self" {
             ty = self.impl_self.clone().ok_or("`Self` used outside of an impl")?;
         }
-        if let Some(p) = self.aliases.get(&ty) {
+        if let Some(p) = self.alias(&ty) {
             ty = p.last().unwrap().clone();
         }
-        match self.globals.get(&ty).copied() {
+        self.resolve_associated_path(ty, item)
+    }
+
+    fn resolve_associated_path(&mut self, ty: String, item: String) -> RResult<Res> {
+        match self.global(&ty).copied() {
             Some(Global::Enum(e)) => {
                 for &v in &self.prog.enums[e as usize].variants {
                     if self.prog.variants[v as usize].name == item {
@@ -655,7 +789,7 @@ impl Resolver {
                 if let Some(id) = self.prog.methods.get(&(TK_ENUM + e, intern(&item))) {
                     return Ok(Res::Fn(*id));
                 }
-                if let Some(g) = self.globals.get(&format!("{}::{}", ty, item)) {
+                if let Some(g) = self.global(&format!("{}::{}", ty, item)) {
                     return Ok(global_res(*g));
                 }
                 if let Some(r) = self.builtin_static(&ty, &item) {
@@ -670,7 +804,7 @@ impl Resolver {
                 if let Some(id) = self.prog.methods.get(&(s, intern(&item))) {
                     return Ok(Res::Fn(*id));
                 }
-                if let Some(g) = self.globals.get(&format!("{}::{}", ty, item)) {
+                if let Some(g) = self.global(&format!("{}::{}", ty, item)) {
                     return Ok(global_res(*g));
                 }
                 if item == "default" {
@@ -683,7 +817,7 @@ impl Resolver {
             }
             _ => {}
         }
-        if let Some(g) = self.globals.get(&format!("{}::{}", ty, item)) {
+        if let Some(g) = self.global(&format!("{}::{}", ty, item)) {
             return Ok(global_res(*g));
         }
         if let Some(r) = self.builtin_static(&ty, &item) {
@@ -698,7 +832,7 @@ impl Resolver {
         if ty.starts_with('<') {
             return Ok(Res::Method(item));
         }
-        Err(format!("unresolved path `{}`", segs.join("::")))
+        Err(format!("unresolved path `{ty}::{item}`"))
     }
 
     fn builtin_static(&self, ty: &str, item: &str) -> Option<Res> {
@@ -713,17 +847,17 @@ impl Resolver {
             let s = self.impl_self.clone().ok_or("`Self` used outside of an impl")?;
             return self.resolve_global(&s);
         }
-        if let Some(g) = self.globals.get(name) {
+        if let Some(g) = self.global(name) {
             return Ok(global_res(*g));
         }
-        for e in &self.glob_enums {
+        for e in self.visible_glob_enums() {
             for &v in &self.prog.enums[*e as usize].variants {
                 if self.prog.variants[v as usize].name == name {
                     return Ok(Res::Variant(v));
                 }
             }
         }
-        if let Some(p) = self.aliases.get(name).cloned() {
+        if let Some(p) = self.alias(name).cloned() {
             if p.len() > 1 || p[0] != name {
                 return self.resolve_path(&p);
             }

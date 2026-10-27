@@ -26,6 +26,7 @@ mod tests {
         let captured = frames.clone();
         let keys = RefCell::new(VecDeque::from(["+", "+", "-", "ignored", "q"]));
         let mut engine = rint::Engine::new();
+        engine.register_native_module("terminal_ui");
         engine
             .register_fn("terminal_ui::draw", move |count: i64| {
                 captured.borrow_mut().push(count);
@@ -46,7 +47,12 @@ mod tests {
             .register_fn("terminal_ui::start", || Ok::<(), String>(()))
             .unwrap();
         engine.register_fn("terminal_ui::stop", || ()).unwrap();
-        assert_eq!(engine.run_source(include_str!("../main.rs")).unwrap(), 0);
+        assert_eq!(
+            engine
+                .run_file(concat!(env!("CARGO_MANIFEST_DIR"), "/src/main.rs"))
+                .unwrap(),
+            0
+        );
         assert_eq!(*frames.borrow(), [0, 1, 2, -3, -3]);
     }
 }

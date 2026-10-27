@@ -6,7 +6,8 @@ default-run = "rint-ratatui-example"
 
 [dependencies]
 rint = { path = "../..", optional = true }
-terminal-ui = { path = "terminal-ui" }
+ratatui = "0.29"
+crossterm = "0.28"
 
 [build-dependencies]
 rint-build = { path = "../../rint-build", optional = true }

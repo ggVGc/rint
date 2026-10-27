@@ -8,6 +8,7 @@ pub mod ast;
 pub mod bindings;
 pub mod engine;
 pub mod native;
+pub mod modules;
 pub use engine::Engine;
 pub mod builtins;
 pub mod format;
@@ -37,7 +38,9 @@ pub fn compile(src: &str) -> Result<program::Program, String> {
 /// Returns the process exit code, or an error message for compile errors and
 /// unsupported features.
 pub fn run(src: &str, file: &str, args: Vec<String>, out: Box<dyn Write>, stdin: Option<Box<dyn std::io::BufRead>>) -> Result<i32, String> {
-    let prog = compile(src).map_err(|e| format!("{}:{}", file, e))?;
+    let source = modules::parse(src, std::path::Path::new(file), &[])
+        .map_err(|e| format!("{file}:{e}"))?;
+    let prog = resolve::resolve_program(source.items).map_err(|e| format!("{file}:{e}"))?;
     let mut it = interp::Interp::new(prog, out, file, args);
     it.stdin = stdin;
     it.run_main()
