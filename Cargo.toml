@@ -1,0 +1,20 @@
+[package]
+name = "rint"
+version = "0.1.0"
+edition = "2024"
+description = "A fast, dynamically-typed interpreter for a subset of Rust"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "rint"
+path = "src/main.rs"
+
+[dependencies]
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+debug = false

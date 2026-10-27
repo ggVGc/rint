@@ -1,0 +1,5 @@
+error: can't find lib `rint` at path `/home/ggvgc/stuff/projects/rint/src/lib.rs`
+ --> /home/ggvgc/stuff/projects/rint/Cargo.toml
+error: can't find lib `rint` at path `/home/ggvgc/stuff/projects/rint/src/lib.rs`
+ --> /home/ggvgc/stuff/projects/rint/Cargo.toml
+error: could not compile due to 2 previous target resolution errors
