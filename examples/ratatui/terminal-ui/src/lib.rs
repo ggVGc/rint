@@ -1,7 +1,7 @@
 //! Owned-value adapter for ratatui's borrowed frames and terminal state.
 use std::cell::RefCell;
 
-use crossterm::event::{self, Event, KeyCode, KeyEventKind};
+use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::{
     DefaultTerminal, Frame,
     widgets::{Block, Paragraph},
@@ -37,11 +37,9 @@ pub fn draw(count: i64) -> Result<(), String> {
     TERMINAL.with(|slot| {
         let mut slot = slot.borrow_mut();
         let terminal = slot.as_mut().ok_or("terminal is not initialized")?;
-        /*
         terminal
             .draw(|frame| render(frame, count))
             .map_err(|e| e.to_string())?;
-        */
         Ok(())
     })
 }
@@ -50,6 +48,7 @@ pub fn read_key() -> Result<String, String> {
     let event = event::read().map_err(|e| e.to_string())?;
     Ok(match event {
         Event::Key(key) if key.kind == KeyEventKind::Press => match key.code {
+            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => "q",
             KeyCode::Char('q') | KeyCode::Esc => "q",
             KeyCode::Char('+') | KeyCode::Up => "+",
             KeyCode::Char('-') | KeyCode::Down => "-",

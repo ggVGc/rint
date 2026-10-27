@@ -36,7 +36,7 @@ It reads the edited file at runtime. No Cargo invocation or recompilation occurs
 The filename is a command-line argument, not a hard-coded script path. Additional
 arguments are forwarded to the interpreted program.
 
-Press `+` / Up to increment, `-` / Down to decrement, and `q` / Esc to quit.
+Press `+` / Up to increment, `-` / Down to decrement, and `q` / Esc / Ctrl-C to quit.
 
 With the `rint` feature enabled, `build.rs` discovers native calls in
 `src/main.rs` and generates bindings to external Cargo dependencies only.
