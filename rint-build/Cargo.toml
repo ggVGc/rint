@@ -1,0 +1,9 @@
+[package]
+name = "rint-build"
+version = "0.1.0"
+edition = "2024"
+description = "Generate rint dependency bindings from interpreted Rust files"
+
+[dependencies]
+rint = { path = "..", version = "0.1.0" }
+serde_json = "1"

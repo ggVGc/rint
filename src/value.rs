@@ -48,6 +48,8 @@ pub enum Value {
     Ctor(u32, bool),
     /// A builtin function used as a value (e.g. `.map(String::from)`).
     BuiltinFn(u32),
+    /// Index into the compiled host function registry.
+    NativeFn(u32),
     Closure(Rc<Closure>),
     Iter(Rc<RefCell<IterState>>),
     /// `Rc<T>` / `Arc<T>`: clone shares.
@@ -510,7 +512,7 @@ impl Value {
             Value::Deque(_) => "VecDeque",
             Value::Heap(_) => "BinaryHeap",
             Value::Range(_) => "range",
-            Value::Fn(_) | Value::Ctor(..) | Value::BuiltinFn(_) => "fn",
+            Value::Fn(_) | Value::Ctor(..) | Value::BuiltinFn(_) | Value::NativeFn(_) => "fn",
             Value::Closure(_) => "closure",
             Value::Iter(_) => "iterator",
             Value::RcBox(_) => "Rc",

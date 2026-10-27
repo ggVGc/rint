@@ -5,6 +5,10 @@
 //! assumed to be valid Rust.
 
 pub mod ast;
+pub mod bindings;
+pub mod engine;
+pub mod native;
+pub use engine::Engine;
 pub mod builtins;
 pub mod format;
 pub mod interp;

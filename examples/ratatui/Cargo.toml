@@ -1,0 +1,20 @@
+[package]
+name = "rint-ratatui-example"
+version = "0.1.0"
+edition = "2024"
+default-run = "rint-ratatui-example"
+
+[dependencies]
+rint = { path = "../..", optional = true }
+terminal-ui = { path = "terminal-ui" }
+
+[build-dependencies]
+rint-build = { path = "../../rint-build", optional = true }
+
+[features]
+rint = ["dep:rint", "dep:rint-build"]
+
+[[bin]]
+name = "rint"
+path = "src/bin/rint.rs"
+required-features = ["rint"]

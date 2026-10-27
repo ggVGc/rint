@@ -73,6 +73,7 @@ pub struct ConstDef {
 #[derive(Default)]
 pub struct Program {
     pub fns: Vec<Rc<FnDecl>>,
+    pub native_fns: Vec<crate::native::NativeBinding>,
     pub structs: Vec<StructDef>,
     pub enums: Vec<EnumDef>,
     pub variants: Vec<VariantDef>,

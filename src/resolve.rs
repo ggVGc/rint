@@ -25,6 +25,7 @@ enum Res {
     Local(u32),
     Cap(u32),
     Fn(u32),
+    Native(u32),
     Const(u32),
     Static(u32),
     Struct(u32),
@@ -44,6 +45,8 @@ struct FnCtx {
 
 pub struct Resolver {
     pub prog: Program,
+    native_paths: Vec<String>,
+    discover_native: bool,
     ctxs: Vec<FnCtx>,
     globals: HashMap<String, Global>,
     aliases: HashMap<String, Vec<String>>,
@@ -81,7 +84,14 @@ const PRIM_TYPES: &[&str] = &[
 ];
 
 pub fn resolve_program(items: Vec<Item>) -> RResult<Program> {
+    resolve_with_native(items, vec![], false).map(|(prog, _)| prog)
+}
+
+/// Resolve with compiled host bindings, or discover external function paths.
+pub fn resolve_with_native(items: Vec<Item>, native_paths: Vec<String>, discover_native: bool) -> RResult<(Program, Vec<String>)> {
     let mut r = Resolver {
+        native_paths,
+        discover_native,
         prog: Program::default(),
         ctxs: Vec::new(),
         globals: HashMap::new(),
@@ -103,7 +113,7 @@ pub fn resolve_program(items: Vec<Item>) -> RResult<Program> {
         Some(Global::Fn(id)) => r.prog.main = Some(*id),
         _ => {}
     }
-    Ok(r.prog)
+    Ok((r.prog, r.native_paths))
 }
 
 fn dummy_fn() -> Rc<FnDecl> {
@@ -554,6 +564,33 @@ impl Resolver {
     }
 
     // ---------------------------------------------------------------- paths
+    fn resolve_value_path(&mut self, p: &PathExpr) -> RResult<Res> {
+        if !p.generics.is_empty() {
+            let mut segs = p.segs.clone();
+            if let Some(prefix) = self.aliases.get(&segs[0]) {
+                let mut expanded = prefix.clone();
+                expanded.extend(segs[1..].iter().cloned());
+                segs = expanded;
+            }
+            if segs.len() > 1 && self.is_external_root(&segs[0]) {
+                let types = p.generics.iter().map(crate::bindings::rust_type).collect::<Result<Vec<_>, _>>()?;
+                let last = segs.last_mut().unwrap();
+                *last = format!("{}::<{}>", last, types.join(", "));
+                return self.resolve_path(&segs);
+            }
+        }
+        self.resolve_path(&p.segs)
+    }
+
+    fn is_external_root(&self, root: &str) -> bool {
+        !STD_MODULES.contains(&root)
+            && !PRIM_TYPES.contains(&root)
+            && !self.modules.contains(root)
+            && !self.globals.contains_key(root)
+            && !STD_TRAITS.contains(&root)
+            && !self.trait_names.contains(root)
+    }
+
     fn resolve_path(&mut self, segs: &[String]) -> RResult<Res> {
         if segs.len() == 1 {
             let name = &segs[0];
@@ -568,6 +605,17 @@ impl Resolver {
             let mut v = p.clone();
             v.extend(segs[1..].iter().cloned());
             segs = v;
+        }
+        if let Some(id) = self.native_paths.iter().position(|p| p == &segs.join("::")) {
+            return Ok(Res::Native(id as u32));
+        }
+        if self.is_external_root(&segs[0]) {
+            if self.discover_native {
+                let id = self.native_paths.len() as u32;
+                self.native_paths.push(segs.join("::"));
+                return Ok(Res::Native(id));
+            }
+            return Err(format!("unresolved path `{}` (no native binding registered)", segs.join("::")));
         }
         let is_module = |r: &Resolver, s: &str| STD_MODULES.contains(&s) || r.modules.contains(s);
         while segs.len() > 2 && is_module(self, &segs[0]) {
@@ -691,6 +739,7 @@ impl Resolver {
             Res::Local(s) => ExprKind::Local(s),
             Res::Cap(c) => ExprKind::Cap(c),
             Res::Fn(id) => ExprKind::Lit(Value::Fn(id)),
+            Res::Native(id) => ExprKind::Lit(Value::NativeFn(id)),
             Res::Const(id) => ExprKind::Const(id),
             Res::Static(id) => ExprKind::Static(id),
             Res::Struct(id) => {
@@ -856,7 +905,7 @@ impl Resolver {
                     e.kind = ExprKind::Lit(Value::Lazy);
                     return Ok(());
                 }
-                let r = self.resolve_path(&p.segs).map_err(loc)?;
+                let r = self.resolve_value_path(p).map_err(loc)?;
                 let hint = p.generics.first().cloned();
                 let mut k = self.res_to_expr(r, line).map_err(loc)?;
                 if let (ExprKind::CallBuiltin(_, _, h), Some(t)) = (&mut k, hint) {
@@ -867,7 +916,7 @@ impl Resolver {
             ExprKind::Call(callee, args) => {
                 self.resolve_exprs(args)?;
                 if let ExprKind::Path(p) = &callee.kind {
-                    let r = self.resolve_path(&p.segs).map_err(loc)?;
+                    let r = self.resolve_value_path(p).map_err(loc)?;
                     let hint = p.generics.first().cloned().map(Rc::new);
                     let mut args = std::mem::take(args);
                     let hints: Vec<Option<Type>> = match &r {

@@ -689,6 +689,13 @@ impl Interp {
                 let args: Vec<Value> = self.stack.drain(base..).collect();
                 Ok(if *is_variant { Value::Enum(*id, Some(new_list(args))) } else { Value::Struct(*id, new_list(args)) })
             }
+            Value::NativeFn(id) => {
+                let binding = self.prog.native_fns.get(*id as usize)
+                    .ok_or_else(|| ctrl_error("missing native binding".into()))?.clone();
+                let args: Vec<Value> = self.stack.drain(base..).collect();
+                let args: Vec<Value> = args.into_iter().map(|v| self.deref(v)).collect();
+                (binding.callback)(&args).map_err(|msg| ctrl_error(format!("native function `{}`: {}", binding.path, msg)))
+            }
             Value::BuiltinFn(id) => {
                 let args: Vec<Value> = self.stack.drain(base..).collect();
                 if *id >= crate::builtins::METHOD_FN_BASE {
@@ -1432,7 +1439,12 @@ impl Interp {
             ExprKind::Call(callee, args) => {
                 let f = self.eval_noc(callee)?;
                 let base = self.push_args(args)?;
-                self.call_value_at(&f, base)
+                self.call_value_at(&f, base).map_err(|ctrl| {
+                    if ctrl == Ctrl::Error && matches!(f, Value::NativeFn(_)) {
+                        let msg = take_ctrl_msg();
+                        ctrl_error(format!("{}:{}:{}: {}", self.file, e.line, e.col, msg))
+                    } else { ctrl }
+                })
             }
             ExprKind::CallBuiltin(id, args, hint) => {
                 let args = self.eval_args(args)?;

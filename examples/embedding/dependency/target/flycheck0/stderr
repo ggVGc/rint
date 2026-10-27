@@ -1,0 +1,88 @@
+   0.010947398s  INFO prepare_target{force=false package_id=script_dependency v0.1.0 (/home/ggvgc/.local/state/styra/workspaces/1793086040639-8093-0/worktrees/rust-library-integration-1793097963461-8093-11/examples/embedding/dependency) target="script_dependency"}: cargo::core::compiler::fingerprint: fingerprint error for script_dependency v0.1.0 (/home/ggvgc/.local/state/styra/workspaces/1793086040639-8093-0/worktrees/rust-library-integration-1793097963461-8093-11/examples/embedding/dependency)/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("script_dependency", ["lib"], "/home/ggvgc/.local/state/styra/workspaces/1793086040639-8093-0/worktrees/rust-library-integration-1793097963461-8093-11/examples/embedding/dependency/src/lib.rs", Edition2024) }
+   0.010977654s  INFO prepare_target{force=false package_id=script_dependency v0.1.0 (/home/ggvgc/.local/state/styra/workspaces/1793086040639-8093-0/worktrees/rust-library-integration-1793097963461-8093-11/examples/embedding/dependency) target="script_dependency"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/ggvgc/bulk/.cargo_build/debug/.fingerprint/script_dependency-9811011f301bbb7f/lib-script_dependency`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   6: cargo::ops::cargo_compile::compile_ws
+   7: cargo::ops::cargo_compile::compile_with_exec
+   8: cargo::ops::cargo_compile::compile
+   9: cargo::commands::check::exec
+  10: <cargo::cli::Exec>::exec
+  11: cargo::main
+  12: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  13: std::rt::lang_start::<()>::{closure#0}
+  14: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/core/src/ops/function.rs:287:21
+  15: std::panicking::catch_unwind::do_call
+             at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/std/src/panicking.rs:581:40
+  16: std::panicking::catch_unwind
+             at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/std/src/panicking.rs:544:19
+  17: std::panic::catch_unwind
+             at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/std/src/panic.rs:359:14
+  18: std::rt::lang_start_internal::{{closure}}
+             at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/std/src/rt.rs:175:24
+  19: std::panicking::catch_unwind::do_call
+             at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/std/src/panicking.rs:581:40
+  20: std::panicking::catch_unwind
+             at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/std/src/panicking.rs:544:19
+  21: std::panic::catch_unwind
+             at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/std/src/panic.rs:359:14
+  22: std::rt::lang_start_internal
+             at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/std/src/rt.rs:171:5
+  23: main
+  24: <unknown>
+  25: __libc_start_main
+  26: <unknown>
+   0.016417305s  INFO prepare_target{force=false package_id=script_dependency v0.1.0 (/home/ggvgc/.local/state/styra/workspaces/1793086040639-8093-0/worktrees/rust-library-integration-1793097963461-8093-11/examples/embedding/dependency) target="script_dependency"}: cargo::core::compiler::fingerprint: fingerprint error for script_dependency v0.1.0 (/home/ggvgc/.local/state/styra/workspaces/1793086040639-8093-0/worktrees/rust-library-integration-1793097963461-8093-11/examples/embedding/dependency)/Check { test: true }/TargetInner { name_inferred: true, ..: lib_target("script_dependency", ["lib"], "/home/ggvgc/.local/state/styra/workspaces/1793086040639-8093-0/worktrees/rust-library-integration-1793097963461-8093-11/examples/embedding/dependency/src/lib.rs", Edition2024) }
+   0.016432974s  INFO prepare_target{force=false package_id=script_dependency v0.1.0 (/home/ggvgc/.local/state/styra/workspaces/1793086040639-8093-0/worktrees/rust-library-integration-1793097963461-8093-11/examples/embedding/dependency) target="script_dependency"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/ggvgc/bulk/.cargo_build/debug/.fingerprint/script_dependency-9db75ec341129658/test-lib-script_dependency`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   6: cargo::ops::cargo_compile::compile_ws
+   7: cargo::ops::cargo_compile::compile_with_exec
+   8: cargo::ops::cargo_compile::compile
+   9: cargo::commands::check::exec
+  10: <cargo::cli::Exec>::exec
+  11: cargo::main
+  12: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  13: std::rt::lang_start::<()>::{closure#0}
+  14: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/core/src/ops/function.rs:287:21
+  15: std::panicking::catch_unwind::do_call
+             at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/std/src/panicking.rs:581:40
+  16: std::panicking::catch_unwind
+             at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/std/src/panicking.rs:544:19
+  17: std::panic::catch_unwind
+             at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/std/src/panic.rs:359:14
+  18: std::rt::lang_start_internal::{{closure}}
+             at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/std/src/rt.rs:175:24
+  19: std::panicking::catch_unwind::do_call
+             at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/std/src/panicking.rs:581:40
+  20: std::panicking::catch_unwind
+             at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/std/src/panicking.rs:544:19
+  21: std::panic::catch_unwind
+             at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/std/src/panic.rs:359:14
+  22: std::rt::lang_start_internal
+             at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/std/src/rt.rs:171:5
+  23: main
+  24: <unknown>
+  25: __libc_start_main
+  26: <unknown>
+    Checking script_dependency v0.1.0 (/home/ggvgc/.local/state/styra/workspaces/1793086040639-8093-0/worktrees/rust-library-integration-1793097963461-8093-11/examples/embedding/dependency)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.06s
